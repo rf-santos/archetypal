@@ -1,0 +1,70 @@
+name: Publish Markdown to Medium
+
+on:
+  pull_request:
+    types:
+      - closed
+    branches:
+      - main
+    paths:
+      - '**/*.md'
+  workflow_dispatch:
+    inputs:
+      markdown_file:
+        description: 'The path to the markdown file you want to publish'
+        required: true
+
+jobs:
+  publish-to-medium:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.x'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install medium
+
+      - name: Publish Markdown to Medium
+        env:
+          MEDIUM_ACCESS_TOKEN: ${{ secrets.MEDIUM_ACCESS_TOKEN }}
+        run: |
+          from medium import Client
+          import glob
+          import os
+          import re
+
+          # Initialize Medium client
+          client = Client()
+          client.access_token = os.environ['MEDIUM_INTEGRATION_TOKEN']
+
+          # Get the user
+          user = client.get_current_user()
+
+          # Find markdown files in the pushed commit
+          markdown_files = glob.glob('**/*.md', recursive=True)
+          target_file = os.getenv('INPUT_MARKDOWN_FILE')
+
+          # If the workflow was triggered manually, publish the specified markdown file
+          if target_file and target_file in markdown_files:
+              markdown_files = [target_file]
+
+          # Publish each markdown file to Medium
+          for md_file in markdown_files:
+              with open(md_file, 'r') as f:
+                  content = f.read()
+              
+              # Extract the first Header 1 in the Markdown file to use as the post title
+              title_match = re.search(r'^#\s(.+)', content, re.MULTILINE)
+              title = title_match.group(1) if title_match else 'Untitled'
+
+              # Create a draft post
+              client.create_post(user_id=user['id'], title=title, content_format='markdown', content=content, publish_status='draft')
+
+          print(f"Published {len(markdown_files)} markdown files to Medium as drafts.")
